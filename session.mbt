@@ -260,6 +260,94 @@ pub fn[T : Transport] BoltConnection::run_query(
 }
 
 ///|
+/// Send BEGIN to start an explicit transaction. The session must be
+/// [`Ready`](ConnState::Ready); on a server [`Success`](ServerMessage::Success)
+/// a transaction is open and the session stays [`Ready`](ConnState::Ready).
+/// Run statements inside the transaction with [`BoltConnection::run_query`],
+/// then finish with [`BoltConnection::commit_tx`] or
+/// [`BoltConnection::rollback_tx`].
+pub fn[T : Transport] BoltConnection::begin_tx(
+  self : BoltConnection[T],
+  extra : Array[(String, PackStreamValue)],
+) -> ServerMessage? {
+  if self.state != Ready {
+    return None
+  }
+  self.transport.write(frame(begin(extra)))
+  match read_server(self.transport) {
+    None => {
+      self.state = Failed
+      None
+    }
+    Some(msg) =>
+      match msg {
+        ServerMessage::Success(_) => Some(msg)
+        ServerMessage::Failure(_) => {
+          self.state = Failed
+          Some(msg)
+        }
+        _ => None
+      }
+  }
+}
+
+///|
+/// Send COMMIT to commit the open transaction. The session must be
+/// [`Ready`](ConnState::Ready); it stays [`Ready`](ConnState::Ready) on a
+/// server [`Success`](ServerMessage::Success).
+pub fn[T : Transport] BoltConnection::commit_tx(
+  self : BoltConnection[T],
+) -> ServerMessage? {
+  if self.state != Ready {
+    return None
+  }
+  self.transport.write(frame(commit()))
+  match read_server(self.transport) {
+    None => {
+      self.state = Failed
+      None
+    }
+    Some(msg) =>
+      match msg {
+        ServerMessage::Success(_) => Some(msg)
+        ServerMessage::Failure(_) => {
+          self.state = Failed
+          Some(msg)
+        }
+        _ => None
+      }
+  }
+}
+
+///|
+/// Send ROLLBACK to roll back the open transaction. The session must be
+/// [`Ready`](ConnState::Ready); it stays [`Ready`](ConnState::Ready) on a
+/// server [`Success`](ServerMessage::Success).
+pub fn[T : Transport] BoltConnection::rollback_tx(
+  self : BoltConnection[T],
+) -> ServerMessage? {
+  if self.state != Ready {
+    return None
+  }
+  self.transport.write(frame(rollback()))
+  match read_server(self.transport) {
+    None => {
+      self.state = Failed
+      None
+    }
+    Some(msg) =>
+      match msg {
+        ServerMessage::Success(_) => Some(msg)
+        ServerMessage::Failure(_) => {
+          self.state = Failed
+          Some(msg)
+        }
+        _ => None
+      }
+  }
+}
+
+///|
 /// Read and reassemble a single chunked server message from `t`.
 fn[T : Transport] read_server(t : T) -> ServerMessage? {
   let payload = Buffer::Buffer()
