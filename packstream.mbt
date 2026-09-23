@@ -92,9 +92,9 @@ pub fn PackStreamValue::bytes(b : Bytes) -> PackStreamValue {
 ///|
 /// Encode a [`PackStreamValue`] to its PackStream byte representation.
 pub fn packstream_encode(value : PackStreamValue) -> Bytes {
-  let buf = Buffer::Buffer()
-  write_value(buf, value)
-  buf.to_bytes()
+  let w = Writer::new()
+  w.write(value)
+  w.to_bytes()
 }
 
 ///|
@@ -103,9 +103,10 @@ pub fn packstream_encode(value : PackStreamValue) -> Bytes {
 /// Returns `None` when the bytes do not hold exactly one well-formed value
 /// (truncated input, an unknown marker, or trailing garbage).
 pub fn packstream_decode(bytes : Bytes) -> PackStreamValue? {
-  match read_value(bytes, 0) {
+  let r = Reader::new(bytes)
+  match r.read() {
     None => None
-    Some((value, pos)) => if pos == bytes.length() { Some(value) } else { None }
+    Some(value) => if r.eof() { Some(value) } else { None }
   }
 }
 
