@@ -156,3 +156,130 @@ test {
   // Map with a non-string key.
   assert_eq(packstream_decode(b"\xa1\x01\x02"), None)
 }
+
+///|
+/// The first marker byte of `value`'s encoding.
+fn marker_of(value : PackStreamValue) -> Byte {
+  packstream_encode(value)[0]
+}
+
+///|
+/// A list of `n` integer values `0, 1, 2, ...`.
+fn int_list(n : Int) -> Array[PackStreamValue] {
+  Array::makei(n, fn(i) { PackStreamValue::int(i.to_int64()) })
+}
+
+///|
+/// A map of `n` entries `("k0", 0)`, `("k1", 1)`, ...
+fn str_map(n : Int) -> Array[(String, PackStreamValue)] {
+  Array::makei(n, fn(i) { ("k\{i}", PackStreamValue::int(i.to_int64())) })
+}
+
+///|
+/// Integer marker-size boundaries (tiny / INT_8 / INT_16 / INT_32 / INT_64).
+test {
+  assert_eq(marker_of(PackStreamValue::int(127L)), b'\x7f')
+  assert_eq(marker_of(PackStreamValue::int(128L)), b'\xc9')
+  assert_eq(marker_of(PackStreamValue::int(-16L)), b'\xf0')
+  assert_eq(marker_of(PackStreamValue::int(-17L)), b'\xc8')
+  assert_eq(marker_of(PackStreamValue::int(-128L)), b'\xc8')
+  assert_eq(marker_of(PackStreamValue::int(-129L)), b'\xc9')
+  assert_eq(marker_of(PackStreamValue::int(32767L)), b'\xc9')
+  assert_eq(marker_of(PackStreamValue::int(32768L)), b'\xca')
+  assert_eq(marker_of(PackStreamValue::int(-32768L)), b'\xc9')
+  assert_eq(marker_of(PackStreamValue::int(-32769L)), b'\xca')
+  assert_eq(marker_of(PackStreamValue::int(2147483647L)), b'\xca')
+  assert_eq(marker_of(PackStreamValue::int(2147483648L)), b'\xcb')
+  assert_eq(marker_of(PackStreamValue::int(-2147483648L)), b'\xca')
+  assert_eq(marker_of(PackStreamValue::int(-2147483649L)), b'\xcb')
+  round_trip(PackStreamValue::int(9223372036854775807L))
+  round_trip(PackStreamValue::int(-9223372036854775808L))
+}
+
+///|
+/// String length-marker boundaries (tiny / STRING_8 / STRING_16 / STRING_32).
+test {
+  assert_eq(marker_of(PackStreamValue::str(String::make(15, 'a'))), b'\x8f')
+  assert_eq(marker_of(PackStreamValue::str(String::make(16, 'a'))), b'\xd0')
+  assert_eq(marker_of(PackStreamValue::str(String::make(255, 'a'))), b'\xd0')
+  assert_eq(marker_of(PackStreamValue::str(String::make(256, 'a'))), b'\xd1')
+  assert_eq(marker_of(PackStreamValue::str(String::make(65535, 'a'))), b'\xd1')
+  assert_eq(marker_of(PackStreamValue::str(String::make(65536, 'a'))), b'\xd2')
+  round_trip(PackStreamValue::str(String::make(16, 'a')))
+  round_trip(PackStreamValue::str(String::make(256, 'a')))
+  round_trip(PackStreamValue::str(String::make(65536, 'a')))
+}
+
+///|
+/// List length-marker boundaries (tiny / LIST_8 / LIST_16 / LIST_32).
+test {
+  assert_eq(marker_of(PackStreamValue::list(int_list(15))), b'\x9f')
+  assert_eq(marker_of(PackStreamValue::list(int_list(16))), b'\xd4')
+  assert_eq(marker_of(PackStreamValue::list(int_list(256))), b'\xd5')
+  assert_eq(marker_of(PackStreamValue::list(int_list(65536))), b'\xd6')
+  round_trip(PackStreamValue::list(int_list(16)))
+  round_trip(PackStreamValue::list(int_list(256)))
+}
+
+///|
+/// Map length-marker boundaries (tiny / MAP_8 / MAP_16).
+test {
+  assert_eq(marker_of(PackStreamValue::map(str_map(15))), b'\xaf')
+  assert_eq(marker_of(PackStreamValue::map(str_map(16))), b'\xd8')
+  assert_eq(marker_of(PackStreamValue::map(str_map(256))), b'\xd9')
+  round_trip(PackStreamValue::map(str_map(16)))
+}
+
+///|
+/// Struct length-marker boundaries (tiny / STRUCT_8 / STRUCT_16).
+test {
+  assert_eq(marker_of(PackStreamValue::struct_(1, int_list(15))), b'\xbf')
+  assert_eq(marker_of(PackStreamValue::struct_(1, int_list(16))), b'\xdc')
+  assert_eq(marker_of(PackStreamValue::struct_(1, int_list(256))), b'\xdd')
+  round_trip(PackStreamValue::struct_(1, int_list(16)))
+}
+
+///|
+/// Bytes length-marker boundaries (BYTES_8 / BYTES_16 / BYTES_32; no tiny form).
+test {
+  assert_eq(marker_of(PackStreamValue::bytes(b"a".repeat(255))), b'\xcc')
+  assert_eq(marker_of(PackStreamValue::bytes(b"a".repeat(256))), b'\xcd')
+  assert_eq(marker_of(PackStreamValue::bytes(b"a".repeat(65535))), b'\xcd')
+  assert_eq(marker_of(PackStreamValue::bytes(b"a".repeat(65536))), b'\xce')
+  round_trip(PackStreamValue::bytes(b"a".repeat(256)))
+}
+
+///|
+/// Decode vectors for the sized (non-tiny) markers.
+test {
+  assert_eq(
+    packstream_decode(b"\xd0\x05hello"),
+    Some(PackStreamValue::str("hello")),
+  )
+  assert_eq(
+    packstream_decode(b"\xd1\x00\x05hello"),
+    Some(PackStreamValue::str("hello")),
+  )
+  assert_eq(
+    packstream_decode(b"\xd4\x02\x01\x02"),
+    Some(
+      PackStreamValue::list([PackStreamValue::int(1L), PackStreamValue::int(2L)]),
+    ),
+  )
+  assert_eq(
+    packstream_decode(b"\xd8\x01\x81a\x01"),
+    Some(PackStreamValue::map([("a", PackStreamValue::int(1L))])),
+  )
+  assert_eq(
+    packstream_decode(b"\xdc\x01\x01\x01"),
+    Some(PackStreamValue::struct_(1, [PackStreamValue::int(1L)])),
+  )
+  assert_eq(
+    packstream_decode(b"\xcc\x02\x01\x02"),
+    Some(PackStreamValue::bytes(b"\x01\x02")),
+  )
+  assert_eq(
+    packstream_decode(b"\xcd\x00\x02\x01\x02"),
+    Some(PackStreamValue::bytes(b"\x01\x02")),
+  )
+}
