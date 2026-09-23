@@ -90,6 +90,41 @@ pub fn PackStreamValue::bytes(b : Bytes) -> PackStreamValue {
 }
 
 ///|
+/// Render a value in a human-readable form: strings unquoted, numbers and
+/// booleans as literals, lists/maps rendered recursively, and structs/bytes as
+/// a short summary. This [`Show`] instance is what `println` uses.
+pub impl Show for PackStreamValue with fn to_string(self) -> String {
+  match self {
+    Null => "null"
+    Bool(b) => if b { "true" } else { "false" }
+    Int(i) => i.to_string()
+    Float(f) => f.to_string()
+    Str(s) => s
+    List(items) => {
+      let parts = []
+      for item in items {
+        parts.push(item.to_string())
+      }
+      "[" + parts.join(", ") + "]"
+    }
+    Map(entries) => {
+      let parts = []
+      for (k, v) in entries {
+        parts.push(k + ": " + v.to_string())
+      }
+      "{" + parts.join(", ") + "}"
+    }
+    Struct(tag, _) => "struct(" + tag.to_string() + ")"
+    Bytes(b) => "bytes(" + b.length().to_string() + ")"
+  }
+}
+
+///|
+/// Promote `to_string` to a regular method so `value.to_string()` needs no
+/// explicit `Show` qualification.
+pub extend PackStreamValue with Show::{to_string}
+
+///|
 /// Encode a [`PackStreamValue`] to its PackStream byte representation.
 pub fn packstream_encode(value : PackStreamValue) -> Bytes {
   let w = Writer::new()

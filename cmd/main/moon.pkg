@@ -1,5 +1,6 @@
-// import {
-//   "Rz-coder8848/moon-neo4j" @lib,
-// }
+import {
+  "Rz-coder8848/moon-neo4j" @lib,
+  "moonbitlang/core/env",
+}
 
 pkgtype(kind: "executable")
