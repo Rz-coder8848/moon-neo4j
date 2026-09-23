@@ -1,4 +1,9 @@
 import {
+  "moonbitlang/core/builtin",
   "moonbitlang/core/debug",
   "moonbitlang/core/encoding/utf8",
 }
+
+import {
+  "moonbitlang/core/json",
+} for "wbtest"
